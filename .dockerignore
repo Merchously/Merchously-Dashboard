@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.github
+.env.local
+.env.production
+db/merchously.db
+db/merchously.db-shm
+db/merchously.db-wal
+DEPLOYMENT.md
+README.md
+scripts
