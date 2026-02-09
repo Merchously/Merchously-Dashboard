@@ -1,0 +1,46 @@
+{
+  "name": "merchously-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "node server.js",
+    "start:next": "next start",
+    "lint": "next lint",
+    "db:init": "node scripts/seed.js",
+    "test:webhook": "node scripts/test-webhook.js"
+  },
+  "dependencies": {
+    "@radix-ui/react-dialog": "^1.1.15",
+    "airtable": "^0.12.2",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.8.1",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^0.563.0",
+    "next": "^15.1.6",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tailwind-merge": "^3.4.0",
+    "tailwindcss-animate": "^1.0.7",
+    "uuid": "^11.0.5"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.19.10",
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "@types/uuid": "^10.0.0",
+    "autoprefixer": "^10.4.21",
+    "eslint": "^9.18.0",
+    "eslint-config-next": "^15.1.6",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.19",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.3"
+  }
+}
