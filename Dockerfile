@@ -12,6 +12,9 @@ RUN npm ci
 # Copy source files
 COPY . .
 
+# Create public dir if it doesn't exist (Next.js expects it)
+RUN mkdir -p public
+
 # Build Next.js
 RUN npm run build
 
@@ -30,6 +33,9 @@ COPY --from=base /app/package.json ./package.json
 COPY --from=base /app/server.js ./server.js
 COPY --from=base /app/public ./public
 COPY --from=base /app/db/schema.sql ./db/schema.sql
+
+# Ensure db directory exists for SQLite at runtime
+RUN mkdir -p db
 
 EXPOSE 3000
 
