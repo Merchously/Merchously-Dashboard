@@ -1,13 +1,20 @@
 import Airtable from "airtable";
 
 // Airtable configuration
-const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY || "";
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID || "appwE9eU3t3vk6jLS";
 const AIRTABLE_TABLE_ID = process.env.AIRTABLE_TABLE_ID || "tbljcOBPFzyO5rCT4";
 
-// Initialize Airtable
-const airtable = new Airtable({ apiKey: AIRTABLE_API_KEY });
-const base = airtable.base(AIRTABLE_BASE_ID);
+// Lazy initialization (avoids build-time errors when env vars aren't set)
+let _base: ReturnType<InstanceType<typeof Airtable>["base"]> | null = null;
+
+function getBase() {
+  if (!_base) {
+    const apiKey = process.env.AIRTABLE_API_KEY || "";
+    const airtable = new Airtable({ apiKey });
+    _base = airtable.base(AIRTABLE_BASE_ID);
+  }
+  return _base;
+}
 
 // Client interface (from Airtable Leads table)
 export interface AirtableClient {
@@ -34,7 +41,7 @@ export interface AirtableClient {
  */
 export async function getClients(limit = 100): Promise<AirtableClient[]> {
   try {
-    const records = await base(AIRTABLE_TABLE_ID)
+    const records = await getBase()(AIRTABLE_TABLE_ID)
       .select({
         maxRecords: limit,
         view: "Grid view", // Default view
@@ -77,7 +84,7 @@ export async function getClientByEmail(
   email: string
 ): Promise<AirtableClient | null> {
   try {
-    const records = await base(AIRTABLE_TABLE_ID)
+    const records = await getBase()(AIRTABLE_TABLE_ID)
       .select({
         maxRecords: 1,
         filterByFormula: `{Email} = "${email}"`,
@@ -122,7 +129,7 @@ export async function getClientByEmail(
  */
 export async function searchClients(query: string): Promise<AirtableClient[]> {
   try {
-    const records = await base(AIRTABLE_TABLE_ID)
+    const records = await getBase()(AIRTABLE_TABLE_ID)
       .select({
         filterByFormula: `OR(FIND(LOWER("${query}"), LOWER({Email})), FIND(LOWER("${query}"), LOWER({Name})))`,
         maxRecords: 50,
