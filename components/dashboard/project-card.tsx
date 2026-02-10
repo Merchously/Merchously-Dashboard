@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 interface ProjectCardProps {
   id: string;
@@ -50,40 +51,46 @@ export function ProjectCard({
   onClick,
 }: ProjectCardProps) {
   return (
-    <div
+    <Card
       onClick={() => onClick(id)}
-      className={`bg-white rounded-lg shadow-sm border border-slate-200 border-l-4 ${
+      className={`border-l-4 ${
         statusBorderColors[status] || "border-l-slate-300"
-      } p-4 hover:shadow-md transition cursor-pointer`}
+      } cursor-pointer hover:shadow-md transition`}
     >
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex-1 min-w-0">
-          <h4 className="font-semibold text-slate-900 truncate">
-            {client_name || client_email}
-          </h4>
-          {client_name && (
-            <p className="text-sm text-slate-500 truncate">{client_email}</p>
-          )}
+      <CardHeader className="pb-2">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-sm truncate">
+              {client_name || client_email}
+            </CardTitle>
+            {client_name && (
+              <CardDescription className="truncate">
+                {client_email}
+              </CardDescription>
+            )}
+          </div>
+          <span
+            className={`ml-2 px-2 py-0.5 text-xs font-medium rounded-full ${
+              tierColors[tier] || "bg-slate-100 text-slate-700"
+            }`}
+          >
+            {tierLabels[tier] || tier}
+          </span>
         </div>
-        <span
-          className={`ml-2 px-2 py-0.5 text-xs font-medium rounded-full ${
-            tierColors[tier] || "bg-slate-100 text-slate-700"
-          }`}
-        >
-          {tierLabels[tier] || tier}
-        </span>
-      </div>
-      <div className="flex items-center gap-2 mt-3">
-        <Badge variant={statusBadgeVariants[status] || "secondary"}>
-          {status}
-        </Badge>
-        <span className="text-xs text-slate-400">
-          {stage.replace(/_/g, " ")}
-        </span>
-      </div>
-      <p className="text-xs text-slate-400 mt-2">
-        {new Date(created_at).toLocaleDateString()}
-      </p>
-    </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-2">
+          <Badge variant={statusBadgeVariants[status] || "secondary"}>
+            {status}
+          </Badge>
+          <span className="text-xs text-muted-foreground">
+            {stage.replace(/_/g, " ")}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          {new Date(created_at).toLocaleDateString()}
+        </p>
+      </CardContent>
+    </Card>
   );
 }

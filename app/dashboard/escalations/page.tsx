@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 import { EscalationCard } from "@/components/dashboard/escalation-card";
 import { EscalationResolveModal } from "@/components/dashboard/escalation-resolve-modal";
 import { useSSE } from "@/lib/hooks/use-sse";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface Escalation {
   id: string;
@@ -94,7 +105,6 @@ export default function EscalationsPage() {
     await fetchEscalations();
   };
 
-  // Client-side level filter
   const filtered =
     levelFilter === "ALL"
       ? escalations
@@ -109,8 +119,22 @@ export default function EscalationsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-slate-500">Loading escalations...</div>
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-4 w-72 mt-2" />
+        </div>
+        <Skeleton className="h-10 w-80" />
+        <div className="space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-5 w-48 mb-2" />
+                <Skeleton className="h-4 w-32" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }
@@ -120,64 +144,57 @@ export default function EscalationsPage() {
       <div className="space-y-6">
         {/* Page Header */}
         <div>
-          <h2 className="text-3xl font-bold font-serif text-slate-900">
+          <h2 className="text-3xl font-bold font-serif tracking-tight">
             Escalations
           </h2>
-          <p className="text-slate-600 mt-1">
+          <p className="text-muted-foreground mt-1">
             Review and resolve escalated issues across projects
           </p>
         </div>
 
-        {/* Status Filter Tabs */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {(["ALL", "OPEN", "RESOLVED", "HALTED"] as StatusFilter[]).map(
-            (status) => (
-              <button
-                key={status}
-                onClick={() => setStatusFilter(status)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-full border transition ${
-                  statusFilter === status
-                    ? "bg-primary text-white border-primary"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-                }`}
-              >
-                {status === "ALL" ? "All" : status}
-                <span className="ml-1.5 text-xs opacity-75">
-                  {statusCounts[status]}
-                </span>
-              </button>
-            )
-          )}
+        {/* Filters */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <Tabs
+            value={statusFilter}
+            onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+          >
+            <TabsList>
+              {(["ALL", "OPEN", "RESOLVED", "HALTED"] as StatusFilter[]).map(
+                (status) => (
+                  <TabsTrigger key={status} value={status}>
+                    {status === "ALL" ? "All" : status}{" "}
+                    <span className="ml-1 text-xs opacity-75">
+                      {statusCounts[status]}
+                    </span>
+                  </TabsTrigger>
+                )
+              )}
+            </TabsList>
+          </Tabs>
 
-          <span className="w-px h-6 bg-slate-200 mx-2" />
+          <Separator orientation="vertical" className="h-6" />
 
-          {/* Level Filters */}
-          {(["ALL", "L1", "L2", "L3"] as LevelFilter[]).map((level) => (
-            <button
-              key={level}
-              onClick={() => setLevelFilter(level)}
-              className={`px-3 py-1.5 text-sm font-medium rounded-full border transition ${
-                levelFilter === level
-                  ? level === "L3"
-                    ? "bg-red-600 text-white border-red-600"
-                    : level === "L2"
-                    ? "bg-yellow-500 text-white border-yellow-500"
-                    : level === "L1"
-                    ? "bg-blue-500 text-white border-blue-500"
-                    : "bg-primary text-white border-primary"
-                  : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-              }`}
-            >
-              {level === "ALL" ? "All Levels" : level}
-            </button>
-          ))}
+          <Select
+            value={levelFilter}
+            onValueChange={(v) => setLevelFilter(v as LevelFilter)}
+          >
+            <SelectTrigger className="w-32">
+              <SelectValue placeholder="All Levels" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All Levels</SelectItem>
+              <SelectItem value="L1">L1</SelectItem>
+              <SelectItem value="L2">L2</SelectItem>
+              <SelectItem value="L3">L3</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Escalation List */}
         {filtered.length === 0 ? (
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
-            <p className="text-slate-500">No escalations found</p>
-          </div>
+          <Card className="p-12 text-center">
+            <p className="text-muted-foreground">No escalations found</p>
+          </Card>
         ) : (
           <div className="space-y-3">
             {filtered.map((esc) => (

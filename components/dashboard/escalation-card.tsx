@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 
 interface EscalationCardProps {
   id: string;
@@ -46,49 +47,51 @@ export function EscalationCard({
   onResolve,
 }: EscalationCardProps) {
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4">
-      <div className="flex items-start justify-between">
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <span
-              className={`px-2 py-0.5 text-xs font-bold rounded-full ${
-                levelColors[level] || "bg-slate-100 text-slate-700"
-              }`}
-            >
-              {level}
-            </span>
-            <span className="text-xs text-slate-500 font-medium">
-              {categoryLabels[category] || category}
-            </span>
-            <Badge
-              variant={statusBadgeVariants[status] || "secondary"}
-              className="ml-auto"
-            >
-              {status}
-            </Badge>
-          </div>
-          <h4 className="font-semibold text-slate-900 mt-2">{title}</h4>
-          {description && (
-            <p className="text-sm text-slate-600 mt-1 line-clamp-2">
-              {description}
+    <Card>
+      <CardContent className="pt-4">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <span
+                className={`px-2 py-0.5 text-xs font-bold rounded-full ${
+                  levelColors[level] || "bg-slate-100 text-slate-700"
+                }`}
+              >
+                {level}
+              </span>
+              <span className="text-xs text-muted-foreground font-medium">
+                {categoryLabels[category] || category}
+              </span>
+              <Badge
+                variant={statusBadgeVariants[status] || "secondary"}
+                className="ml-auto"
+              >
+                {status}
+              </Badge>
+            </div>
+            <h4 className="font-semibold mt-2">{title}</h4>
+            {description && (
+              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                {description}
+              </p>
+            )}
+            <p className="text-xs text-muted-foreground mt-2">
+              {new Date(created_at).toLocaleDateString()}{" "}
+              {new Date(created_at).toLocaleTimeString()}
             </p>
+          </div>
+          {status === "OPEN" && (
+            <Button
+              onClick={() => onResolve(id)}
+              size="sm"
+              variant="outline"
+              className="ml-3 flex-shrink-0"
+            >
+              Resolve
+            </Button>
           )}
-          <p className="text-xs text-slate-400 mt-2">
-            {new Date(created_at).toLocaleDateString()}{" "}
-            {new Date(created_at).toLocaleTimeString()}
-          </p>
         </div>
-        {status === "OPEN" && (
-          <Button
-            onClick={() => onResolve(id)}
-            size="sm"
-            variant="outline"
-            className="ml-3 flex-shrink-0"
-          >
-            Resolve
-          </Button>
-        )}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   );
 }

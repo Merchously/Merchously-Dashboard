@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { ProjectCard } from "@/components/dashboard/project-card";
 import { PipelineView } from "@/components/dashboard/pipeline-view";
 import { useSSE } from "@/lib/hooks/use-sse";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Project {
   id: string;
@@ -78,8 +80,22 @@ export default function ProjectsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-slate-500">Loading projects...</div>
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-32" />
+          <Skeleton className="h-4 w-64 mt-2" />
+        </div>
+        <Skeleton className="h-10 w-96" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <Card key={i}>
+              <CardContent className="p-4">
+                <Skeleton className="h-5 w-40 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       </div>
     );
   }
@@ -89,10 +105,10 @@ export default function ProjectsPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-bold font-serif text-slate-900">
+          <h2 className="text-3xl font-bold font-serif tracking-tight">
             Projects
           </h2>
-          <p className="text-slate-600 mt-1">
+          <p className="text-muted-foreground mt-1">
             Track client engagements across the pipeline
           </p>
         </div>
@@ -115,35 +131,32 @@ export default function ProjectsPage() {
       </div>
 
       {/* Status Filters */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {(
-          ["ALL", "ACTIVE", "PAUSED", "BLOCKED", "COMPLETE"] as StatusFilter[]
-        ).map((status) => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`px-3 py-1.5 text-sm font-medium rounded-full border transition ${
-              statusFilter === status
-                ? "bg-primary text-white border-primary"
-                : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
-            }`}
-          >
-            {status === "ALL" ? "All" : status}
-            <span className="ml-1.5 text-xs opacity-75">
-              {statusCounts[status]}
-            </span>
-          </button>
-        ))}
-      </div>
+      <Tabs
+        value={statusFilter}
+        onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+      >
+        <TabsList>
+          {(
+            ["ALL", "ACTIVE", "PAUSED", "BLOCKED", "COMPLETE"] as StatusFilter[]
+          ).map((status) => (
+            <TabsTrigger key={status} value={status}>
+              {status === "ALL" ? "All" : status}{" "}
+              <span className="ml-1 text-xs opacity-75">
+                {statusCounts[status]}
+              </span>
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
 
       {/* Content */}
       {projects.length === 0 ? (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
-          <p className="text-slate-500">No projects found</p>
-          <p className="text-sm text-slate-400 mt-1">
+        <Card className="p-12 text-center">
+          <p className="text-muted-foreground">No projects found</p>
+          <p className="text-sm text-muted-foreground/70 mt-1">
             Projects are created automatically when webhooks arrive
           </p>
-        </div>
+        </Card>
       ) : viewMode === "pipeline" ? (
         <PipelineView
           projects={projects}
