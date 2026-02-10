@@ -41,10 +41,22 @@ export default async function DashboardLayout({
                 Dashboard
               </a>
               <a
-                href="/dashboard/approvals"
+                href="/dashboard/projects"
                 className="text-sm font-medium text-slate-700 hover:text-primary transition"
               >
-                Approvals
+                Projects
+              </a>
+              <a
+                href="/dashboard/escalations"
+                className="text-sm font-medium text-slate-700 hover:text-primary transition"
+              >
+                Escalations
+              </a>
+              <a
+                href="/dashboard/agents"
+                className="text-sm font-medium text-slate-700 hover:text-primary transition"
+              >
+                Agents
               </a>
             </nav>
 

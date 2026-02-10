@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { approvals } from "@/lib/db";
+import { approvals, projects, escalations, policyAudit } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { broadcast } from "@/lib/sse";
+import { enforceApprovalPolicy } from "@/lib/policy";
 
 /**
  * GET /api/approvals/:id
@@ -88,6 +90,84 @@ export async function PATCH(
         { success: false, error: "Approval not found" },
         { status: 404 }
       );
+    }
+
+    // Enforce approval policy
+    const policyResult = enforceApprovalPolicy(existingApproval, {
+      action: status,
+      admin_comments,
+      edited_response,
+    });
+
+    if (!policyResult.allowed) {
+      policyAudit.create({
+        approval_id: id,
+        policy_action: "blocked",
+        reason: policyResult.reason!,
+      });
+
+      broadcast({
+        type: "approval.policy_blocked",
+        data: { approval_id: id, reason: policyResult.reason },
+      });
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: policyResult.reason,
+          policy_blocked: true,
+        },
+        { status: 422 }
+      );
+    }
+
+    // If policy triggered auto-escalation, create the escalation
+    if (policyResult.auto_escalation) {
+      const clientProjects = projects.getByEmail(
+        existingApproval.client_email
+      );
+      if (clientProjects.length > 0) {
+        const project = clientProjects[0];
+        const escalation = escalations.create({
+          project_id: project.id,
+          level: policyResult.auto_escalation.level,
+          category: policyResult.auto_escalation.category,
+          title: policyResult.auto_escalation.title,
+          description: policyResult.auto_escalation.description,
+        });
+
+        policyAudit.create({
+          approval_id: id,
+          escalation_id: escalation.id,
+          policy_action: "auto_escalated",
+          reason: policyResult.auto_escalation.description,
+        });
+
+        // L3 auto-pause
+        if (policyResult.auto_escalation.level === "L3") {
+          projects.update(project.id, { status: "PAUSED" });
+
+          broadcast({
+            type: "project.updated",
+            data: {
+              id: project.id,
+              status: "PAUSED",
+              reason: "L3 escalation auto-pause",
+            },
+          });
+        }
+
+        broadcast({
+          type: "escalation.created",
+          data: {
+            id: escalation.id,
+            project_id: escalation.project_id,
+            level: escalation.level,
+            category: escalation.category,
+            title: escalation.title,
+          },
+        });
+      }
     }
 
     // Update approval

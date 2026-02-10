@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { approvals, webhookEvents } from "@/lib/db";
+import { approvals, webhookEvents, projects, agents } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
+import { mapAgentToStage, mapTierString } from "@/lib/policy";
 
 // Agent key mapping for validation
 const validAgentKeys = [
@@ -109,9 +110,45 @@ export async function POST(
       },
     });
 
+    // Upsert project for this client
+    const tier = mapTierString(
+      body.tier || response?.tier || response?.recommended_tier || "Launch"
+    );
+    const stage = mapAgentToStage(agent);
+
+    const project = projects.upsertByEmailAndTier(email, tier, {
+      stage,
+      client_name: body.name || body.client_name || null,
+      icp_level: response?.icp_level || null,
+      sop_step_key: body.sop_step_key || null,
+    });
+
+    broadcast({
+      type: "project.updated",
+      data: {
+        id: project.id,
+        client_email: project.client_email,
+        stage: project.stage,
+        tier: project.tier,
+        status: project.status,
+      },
+    });
+
+    // Update agent event count
+    agents.incrementEventCount(agent);
+
+    broadcast({
+      type: "agent.event",
+      data: {
+        agent_key: agent,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
     return NextResponse.json({
       success: true,
       approval_id: approval.id,
+      project_id: project.id,
       message: "Approval created successfully",
     });
   } catch (error) {

@@ -69,3 +69,103 @@ AFTER UPDATE ON approvals
 BEGIN
   UPDATE approvals SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
+
+-- =============================================
+-- HITL Governance Expansion Tables
+-- =============================================
+
+-- Projects table (one per client per tier engagement)
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,                    -- UUID
+  client_email TEXT NOT NULL,             -- Links to Airtable
+  client_name TEXT,                       -- Cached from Airtable for display
+  tier TEXT NOT NULL CHECK(tier IN ('TIER_1','TIER_2','TIER_3')),
+  stage TEXT NOT NULL DEFAULT 'LEAD'
+    CHECK(stage IN ('LEAD','QUALIFIED','DISCOVERY','FIT_DECISION',
+                     'PROPOSAL','CLOSED','ONBOARDING','DELIVERY',
+                     'COMPLETE','PAUSED')),
+  status TEXT NOT NULL DEFAULT 'ACTIVE'
+    CHECK(status IN ('ACTIVE','BLOCKED','PAUSED','COMPLETE')),
+  icp_level TEXT CHECK(icp_level IS NULL OR icp_level IN ('A','B','C')),
+  sop_step_key TEXT,                      -- e.g. 'T1_STEP_3_DESIGN'
+  blockers_json TEXT DEFAULT '[]',        -- JSON array of blocker strings
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(client_email, tier)              -- One project per client per tier
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_email ON projects(client_email);
+CREATE INDEX IF NOT EXISTS idx_projects_stage ON projects(stage);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_projects_created ON projects(created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS update_projects_timestamp
+AFTER UPDATE ON projects
+BEGIN
+  UPDATE projects SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- Escalations table (linked to projects)
+CREATE TABLE IF NOT EXISTS escalations (
+  id TEXT PRIMARY KEY,                    -- UUID
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  level TEXT NOT NULL CHECK(level IN ('L1','L2','L3')),
+  category TEXT NOT NULL
+    CHECK(category IN ('FINANCIAL','SCOPE','LEGAL_BRAND',
+                        'RELATIONSHIP','SYSTEM_CONFLICT','OTHER')),
+  status TEXT NOT NULL DEFAULT 'OPEN'
+    CHECK(status IN ('OPEN','RESOLVED','HALTED')),
+  title TEXT NOT NULL,
+  description TEXT,
+  decision_notes TEXT,                    -- Required for L2/L3 resolution
+  resolved_by TEXT,
+  resolved_at DATETIME,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_escalations_project ON escalations(project_id);
+CREATE INDEX IF NOT EXISTS idx_escalations_status ON escalations(status);
+CREATE INDEX IF NOT EXISTS idx_escalations_level ON escalations(level);
+CREATE INDEX IF NOT EXISTS idx_escalations_created ON escalations(created_at DESC);
+
+CREATE TRIGGER IF NOT EXISTS update_escalations_timestamp
+AFTER UPDATE ON escalations
+BEGIN
+  UPDATE escalations SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- Agents registry table
+CREATE TABLE IF NOT EXISTS agents (
+  id TEXT PRIMARY KEY,                    -- UUID
+  agent_key TEXT NOT NULL UNIQUE,         -- 'leadIntake', 'discovery', etc.
+  display_name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'general',
+  is_active INTEGER NOT NULL DEFAULT 1,  -- SQLite boolean (0/1)
+  last_event_at DATETIME,
+  total_events INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_agents_key ON agents(agent_key);
+CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(is_active);
+
+CREATE TRIGGER IF NOT EXISTS update_agents_timestamp
+AFTER UPDATE ON agents
+BEGIN
+  UPDATE agents SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- Approval policy audit trail
+CREATE TABLE IF NOT EXISTS approval_policy_audit (
+  id TEXT PRIMARY KEY,                    -- UUID
+  approval_id TEXT,                       -- References approvals(id)
+  escalation_id TEXT,                     -- References escalations(id)
+  policy_action TEXT NOT NULL,            -- 'auto_escalated', 'notes_required', 'blocked'
+  reason TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_policy_audit_approval ON approval_policy_audit(approval_id);
+CREATE INDEX IF NOT EXISTS idx_policy_audit_created ON approval_policy_audit(created_at DESC);
