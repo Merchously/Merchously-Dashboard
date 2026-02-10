@@ -1,8 +1,11 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Link2, Link2Off, ChevronDown, ChevronUp, Check } from "lucide-react";
 
 interface AgentCardProps {
   id: string;
@@ -10,9 +13,11 @@ interface AgentCardProps {
   display_name: string;
   category: string;
   is_active: number;
+  webhook_url?: string | null;
   total_events: number;
   last_event_at?: string | null;
   onToggle: (id: string, is_active: boolean) => void;
+  onWebhookUpdate: (id: string, webhook_url: string) => void;
 }
 
 const categoryColors: Record<string, string> = {
@@ -28,11 +33,23 @@ export function AgentCard({
   display_name,
   category,
   is_active,
+  webhook_url,
   total_events,
   last_event_at,
   onToggle,
+  onWebhookUpdate,
 }: AgentCardProps) {
   const active = is_active === 1;
+  const [expanded, setExpanded] = useState(false);
+  const [urlInput, setUrlInput] = useState(webhook_url || "");
+  const [saving, setSaving] = useState(false);
+
+  const handleSaveUrl = async () => {
+    setSaving(true);
+    await onWebhookUpdate(id, urlInput.trim());
+    setSaving(false);
+    setExpanded(false);
+  };
 
   return (
     <Card>
@@ -62,6 +79,11 @@ export function AgentCard({
             {category}
           </span>
           <span className="text-xs text-muted-foreground">{agent_key}</span>
+          {webhook_url ? (
+            <Link2 className="h-3.5 w-3.5 text-green-600 ml-auto" />
+          ) : (
+            <Link2Off className="h-3.5 w-3.5 text-slate-400 ml-auto" />
+          )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -77,6 +99,44 @@ export function AgentCard({
                 : "Never"}
             </p>
           </div>
+        </div>
+
+        {/* Webhook URL config */}
+        <div className="mt-3 pt-3 border-t">
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition w-full"
+          >
+            {expanded ? (
+              <ChevronUp className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+            Webhook URL
+            {webhook_url && (
+              <span className="text-green-600 ml-1">configured</span>
+            )}
+          </button>
+
+          {expanded && (
+            <div className="flex gap-2 mt-2">
+              <Input
+                placeholder="https://n8n.example.com/webhook/..."
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                className="text-xs h-8"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSaveUrl}
+                disabled={saving}
+                className="h-8 px-2"
+              >
+                <Check className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

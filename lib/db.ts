@@ -34,6 +34,16 @@ function initSchema() {
     const schema = fs.readFileSync(schemaPath, "utf8");
     db!.exec(schema);
   }
+
+  // Safe migrations for existing databases
+  try {
+    const cols = db!.prepare("PRAGMA table_info(agents)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "webhook_url")) {
+      db!.exec("ALTER TABLE agents ADD COLUMN webhook_url TEXT");
+    }
+  } catch {
+    // Table may not exist yet; schema.sql will create it
+  }
 }
 
 // Types
@@ -122,10 +132,32 @@ export interface Agent {
   display_name: string;
   category: string;
   is_active: number;
+  webhook_url?: string | null;
   last_event_at?: string | null;
   total_events: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProjectNote {
+  id: string;
+  project_id: string;
+  author: string;
+  content: string;
+  note_type: "note" | "instruction" | "stage_change" | "status_change" | "agent_trigger" | "system";
+  created_at: string;
+}
+
+export interface AgentTrigger {
+  id: string;
+  project_id: string;
+  agent_key: string;
+  trigger_payload: string;
+  status: "pending" | "sent" | "failed";
+  response_status?: number | null;
+  error_message?: string | null;
+  triggered_by: string;
+  created_at: string;
 }
 
 export interface ApprovalPolicyAudit {
@@ -657,7 +689,7 @@ export const agents = {
 
   update: (
     id: string,
-    data: Partial<Pick<Agent, "is_active" | "category" | "display_name">>
+    data: Partial<Pick<Agent, "is_active" | "category" | "display_name" | "webhook_url">>
   ): Agent | null => {
     const database = getDb();
     const fields: string[] = [];
@@ -674,6 +706,10 @@ export const agents = {
     if (data.display_name !== undefined) {
       fields.push("display_name = ?");
       values.push(data.display_name);
+    }
+    if (data.webhook_url !== undefined) {
+      fields.push("webhook_url = ?");
+      values.push(data.webhook_url);
     }
 
     if (fields.length === 0) {
@@ -749,6 +785,111 @@ export const policyAudit = {
   },
 };
 
+// Project notes CRUD operations
+export const projectNotes = {
+  create: (
+    data: Omit<ProjectNote, "id" | "created_at">
+  ): ProjectNote => {
+    const database = getDb();
+    const id = uuidv4();
+    const stmt = database.prepare(`
+      INSERT INTO project_notes (id, project_id, author, content, note_type)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(id, data.project_id, data.author, data.content, data.note_type);
+    return projectNotes.getById(id)!;
+  },
+
+  getById: (id: string): ProjectNote | null => {
+    const database = getDb();
+    const stmt = database.prepare("SELECT * FROM project_notes WHERE id = ?");
+    return stmt.get(id) as ProjectNote | null;
+  },
+
+  getByProject: (project_id: string, limit = 100): ProjectNote[] => {
+    const database = getDb();
+    const stmt = database.prepare(
+      "SELECT * FROM project_notes WHERE project_id = ? ORDER BY created_at DESC LIMIT ?"
+    );
+    return stmt.all(project_id, limit) as ProjectNote[];
+  },
+};
+
+// Agent triggers CRUD operations
+export const agentTriggers = {
+  create: (
+    data: Omit<AgentTrigger, "id" | "created_at" | "status"> &
+      Partial<Pick<AgentTrigger, "status">>
+  ): AgentTrigger => {
+    const database = getDb();
+    const id = uuidv4();
+    const stmt = database.prepare(`
+      INSERT INTO agent_triggers (id, project_id, agent_key, trigger_payload, status, response_status, error_message, triggered_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      data.project_id,
+      data.agent_key,
+      data.trigger_payload,
+      data.status || "pending",
+      data.response_status || null,
+      data.error_message || null,
+      data.triggered_by
+    );
+
+    return agentTriggers.getById(id)!;
+  },
+
+  getById: (id: string): AgentTrigger | null => {
+    const database = getDb();
+    const stmt = database.prepare("SELECT * FROM agent_triggers WHERE id = ?");
+    return stmt.get(id) as AgentTrigger | null;
+  },
+
+  getByProject: (project_id: string, limit = 50): AgentTrigger[] => {
+    const database = getDb();
+    const stmt = database.prepare(
+      "SELECT * FROM agent_triggers WHERE project_id = ? ORDER BY created_at DESC LIMIT ?"
+    );
+    return stmt.all(project_id, limit) as AgentTrigger[];
+  },
+
+  update: (
+    id: string,
+    data: Partial<Pick<AgentTrigger, "status" | "response_status" | "error_message">>
+  ): AgentTrigger | null => {
+    const database = getDb();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (data.status !== undefined) {
+      fields.push("status = ?");
+      values.push(data.status);
+    }
+    if (data.response_status !== undefined) {
+      fields.push("response_status = ?");
+      values.push(data.response_status);
+    }
+    if (data.error_message !== undefined) {
+      fields.push("error_message = ?");
+      values.push(data.error_message);
+    }
+
+    if (fields.length === 0) return agentTriggers.getById(id);
+
+    values.push(id);
+    const stmt = database.prepare(
+      `UPDATE agent_triggers SET ${fields.join(", ")} WHERE id = ?`
+    );
+    stmt.run(...values);
+
+    return agentTriggers.getById(id);
+  },
+};
+
 // Close database connection (call on app shutdown)
 export function closeDb() {
   if (db) {
@@ -766,5 +907,7 @@ export default {
   escalations,
   agents,
   policyAudit,
+  projectNotes,
+  agentTriggers,
   closeDb,
 };

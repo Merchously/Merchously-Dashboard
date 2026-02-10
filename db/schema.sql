@@ -151,6 +151,8 @@ CREATE TABLE IF NOT EXISTS agents (
 CREATE INDEX IF NOT EXISTS idx_agents_key ON agents(agent_key);
 CREATE INDEX IF NOT EXISTS idx_agents_active ON agents(is_active);
 
+-- Add webhook_url column to agents (safe migration for existing DBs)
+
 CREATE TRIGGER IF NOT EXISTS update_agents_timestamp
 AFTER UPDATE ON agents
 BEGIN
@@ -169,3 +171,39 @@ CREATE TABLE IF NOT EXISTS approval_policy_audit (
 
 CREATE INDEX IF NOT EXISTS idx_policy_audit_approval ON approval_policy_audit(approval_id);
 CREATE INDEX IF NOT EXISTS idx_policy_audit_created ON approval_policy_audit(created_at DESC);
+
+-- =============================================
+-- HITL Command & Control Tables
+-- =============================================
+
+-- Project notes (activity feed / human instructions)
+CREATE TABLE IF NOT EXISTS project_notes (
+  id TEXT PRIMARY KEY,                    -- UUID
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  author TEXT NOT NULL DEFAULT 'Admin',
+  content TEXT NOT NULL,
+  note_type TEXT NOT NULL DEFAULT 'note'
+    CHECK(note_type IN ('note','instruction','stage_change','status_change','agent_trigger','system')),
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_notes_project ON project_notes(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_notes_created ON project_notes(created_at DESC);
+
+-- Agent triggers (log of agent invocations from dashboard)
+CREATE TABLE IF NOT EXISTS agent_triggers (
+  id TEXT PRIMARY KEY,                    -- UUID
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  agent_key TEXT NOT NULL,
+  trigger_payload TEXT NOT NULL,          -- JSON
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending','sent','failed')),
+  response_status INTEGER,
+  error_message TEXT,
+  triggered_by TEXT NOT NULL DEFAULT 'Admin',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_triggers_project ON agent_triggers(project_id);
+CREATE INDEX IF NOT EXISTS idx_agent_triggers_agent ON agent_triggers(agent_key);
+CREATE INDEX IF NOT EXISTS idx_agent_triggers_created ON agent_triggers(created_at DESC);

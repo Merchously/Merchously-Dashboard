@@ -24,10 +24,11 @@ export async function PATCH(
       );
     }
 
-    const { is_active, category } = body;
+    const { is_active, category, webhook_url } = body;
     const updateData: any = {};
     if (is_active !== undefined) updateData.is_active = is_active ? 1 : 0;
     if (category !== undefined) updateData.category = category;
+    if (webhook_url !== undefined) updateData.webhook_url = webhook_url;
 
     const updated = agents.update(id, updateData);
 

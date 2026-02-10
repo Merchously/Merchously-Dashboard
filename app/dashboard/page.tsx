@@ -6,9 +6,11 @@ import { ApprovalCard } from "@/components/dashboard/approval-card";
 import { ApprovalModal } from "@/components/dashboard/approval-modal";
 import { useSSE } from "@/lib/hooks/use-sse";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, AlertTriangle, PauseCircle, CheckCircle } from "lucide-react";
+import { Clock, AlertTriangle, PauseCircle, CheckCircle, Plus } from "lucide-react";
+import { CreateProjectModal } from "@/components/dashboard/create-project-modal";
 
 interface Approval {
   id: string;
@@ -52,6 +54,7 @@ export default function DashboardPage() {
     null
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showCreateProject, setShowCreateProject] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -88,6 +91,7 @@ export default function DashboardPage() {
       event.type === "escalation.created" ||
       event.type === "escalation.resolved" ||
       event.type === "project.updated" ||
+      event.type === "project.created" ||
       event.type === "approval.policy_blocked"
     ) {
       fetchData();
@@ -211,15 +215,25 @@ export default function DashboardPage() {
               Monitor and approve agent outputs across your client pipeline
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isConnected ? "bg-green-500" : "bg-red-500"
-              }`}
-            />
-            <span className="text-xs text-muted-foreground">
-              {isConnected ? "Live" : "Disconnected"}
-            </span>
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => setShowCreateProject(true)}
+              size="sm"
+              className="gap-1"
+            >
+              <Plus className="h-4 w-4" />
+              New Project
+            </Button>
+            <div className="flex items-center gap-2">
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isConnected ? "bg-green-500" : "bg-red-500"
+                }`}
+              />
+              <span className="text-xs text-muted-foreground">
+                {isConnected ? "Live" : "Disconnected"}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -474,6 +488,12 @@ export default function DashboardPage() {
         approval={selectedApproval}
         onApprove={handleApprove}
         onReject={handleReject}
+      />
+
+      <CreateProjectModal
+        isOpen={showCreateProject}
+        onClose={() => setShowCreateProject(false)}
+        onCreated={fetchData}
       />
     </>
   );

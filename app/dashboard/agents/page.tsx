@@ -13,6 +13,7 @@ interface Agent {
   display_name: string;
   category: string;
   is_active: number;
+  webhook_url?: string | null;
   total_events: number;
   last_event_at?: string | null;
   created_at: string;
@@ -61,6 +62,22 @@ export default function AgentsPage() {
       }
     } catch (error) {
       console.error("Error toggling agent:", error);
+    }
+  };
+
+  const handleWebhookUpdate = async (id: string, webhook_url: string) => {
+    try {
+      const response = await fetch(`/api/agents/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhook_url: webhook_url || null }),
+      });
+
+      if (response.ok) {
+        await fetchAgents();
+      }
+    } catch (error) {
+      console.error("Error updating webhook URL:", error);
     }
   };
 
@@ -163,7 +180,7 @@ export default function AgentsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {agents.map((agent) => (
-            <AgentCard key={agent.id} {...agent} onToggle={handleToggle} />
+            <AgentCard key={agent.id} {...agent} onToggle={handleToggle} onWebhookUpdate={handleWebhookUpdate} />
           ))}
         </div>
       )}

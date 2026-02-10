@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { projects } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { broadcast } from "@/lib/sse";
 
 function safeJSONParse(jsonString: string): any {
   try {
@@ -99,6 +100,17 @@ export async function POST(request: NextRequest) {
       sop_step_key: sop_step_key || null,
       blockers_json: "[]",
     } as any);
+
+    broadcast({
+      type: "project.created",
+      data: {
+        id: project.id,
+        client_email: project.client_email,
+        tier: project.tier,
+        stage: project.stage,
+        status: project.status,
+      },
+    });
 
     return NextResponse.json({
       success: true,

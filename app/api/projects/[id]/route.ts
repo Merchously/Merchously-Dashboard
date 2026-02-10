@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { projects, approvals, escalations } from "@/lib/db";
+import { projects, approvals, escalations, projectNotes, agentTriggers } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
+import { broadcast } from "@/lib/sse";
 
 function safeJSONParse(jsonString: string): any {
   try {
@@ -51,12 +52,16 @@ export async function GET(
       }));
 
     const linkedEscalations = escalations.getByProject(project.id);
+    const notes = projectNotes.getByProject(project.id);
+    const triggers = agentTriggers.getByProject(project.id);
 
     return NextResponse.json({
       success: true,
       project: parseProject(project),
       approvals: linkedApprovals,
       escalations: linkedEscalations,
+      notes,
+      triggers,
     });
   } catch (error) {
     console.error("Error fetching project:", error);
@@ -116,6 +121,34 @@ export async function PATCH(
         { status: 500 }
       );
     }
+
+    // Auto-create system notes for stage/status changes
+    if (stage !== undefined && stage !== existing.stage) {
+      projectNotes.create({
+        project_id: id,
+        author: "System",
+        content: `Stage changed from ${existing.stage.replace(/_/g, " ")} to ${stage.replace(/_/g, " ")}`,
+        note_type: "stage_change",
+      });
+    }
+    if (status !== undefined && status !== existing.status) {
+      projectNotes.create({
+        project_id: id,
+        author: "System",
+        content: `Status changed from ${existing.status} to ${status}`,
+        note_type: "status_change",
+      });
+    }
+
+    broadcast({
+      type: "project.updated",
+      data: {
+        id: updated.id,
+        client_email: updated.client_email,
+        stage: updated.stage,
+        status: updated.status,
+      },
+    });
 
     return NextResponse.json({
       success: true,
