@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { verifyToken } from "@/lib/auth";
+import { verifyTokenEdge } from "@/lib/auth-edge";
 
 // Paths that require authentication
 const protectedPaths = ["/dashboard"];
@@ -8,7 +8,7 @@ const protectedPaths = ["/dashboard"];
 // Paths that should redirect to dashboard if already authenticated
 const authPaths = ["/login"];
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const token = request.cookies.get("auth-token")?.value;
 
@@ -18,9 +18,8 @@ export function middleware(request: NextRequest) {
   );
   const isAuthPath = authPaths.some((path) => pathname.startsWith(path));
 
-  // Verify token
-  const payload = token ? verifyToken(token) : null;
-  const isAuthenticated = payload !== null;
+  // Verify token (async — jose is Edge Runtime compatible)
+  const isAuthenticated = token ? await verifyTokenEdge(token) : false;
 
   // Redirect to login if accessing protected path without auth
   if (isProtectedPath && !isAuthenticated) {
