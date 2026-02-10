@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyPassword, generateToken, setAuthCookie } from "@/lib/auth";
+import { verifyUser, generateToken, setAuthCookie } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { password } = body;
+    const { username, password } = body;
 
     if (!password) {
       return NextResponse.json(
@@ -13,17 +13,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify password
-    const isValid = await verifyPassword(password);
-    if (!isValid) {
+    // Verify credentials (supports both multi-user and legacy single-password)
+    const userPayload = await verifyUser(username || "admin", password);
+    if (!userPayload) {
       return NextResponse.json(
-        { error: "Invalid password" },
+        { error: "Invalid credentials" },
         { status: 401 }
       );
     }
 
-    // Generate JWT token
-    const token = generateToken("admin");
+    // Generate JWT token with role
+    const token = generateToken(userPayload);
 
     // Set auth cookie
     await setAuthCookie(token);
@@ -31,6 +31,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "Login successful",
+      user: {
+        username: userPayload.username,
+        role: userPayload.role,
+        displayName: userPayload.displayName,
+      },
     });
   } catch (error) {
     console.error("Login error:", error);

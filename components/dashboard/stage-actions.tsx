@@ -18,10 +18,11 @@ import {
 interface StageActionsProps {
   stage: string;
   status: string;
-  onAdvanceStage: (nextStage: string) => void;
+  onAdvanceStage: (nextStage: string, extra?: { fit_decision_notes?: string }) => void;
   onTriggerAgent: (agentKey: string) => void;
   onCreateEscalation: () => void;
   onTogglePause: () => void;
+  onFitDecision?: () => void;
 }
 
 export function StageActions({
@@ -31,6 +32,7 @@ export function StageActions({
   onTriggerAgent,
   onCreateEscalation,
   onTogglePause,
+  onFitDecision,
 }: StageActionsProps) {
   const stageAction = STAGE_ACTIONS[stage];
   const availableAgents = STAGE_AGENT_MAP[stage] || [];
@@ -43,10 +45,16 @@ export function StageActions({
         <CardTitle className="text-base">Actions</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
-        {/* Advance stage */}
+        {/* Advance stage — FIT_DECISION requires a human decision modal */}
         {stageAction && !isComplete && (
           <Button
-            onClick={() => onAdvanceStage(stageAction.nextStage)}
+            onClick={() => {
+              if (stage === "FIT_DECISION" && onFitDecision) {
+                onFitDecision();
+              } else {
+                onAdvanceStage(stageAction.nextStage);
+              }
+            }}
             className="w-full justify-start gap-2"
             disabled={isPaused}
           >

@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { agents } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { requireAuth, requireRole } from "@/lib/auth";
 
 /**
  * PATCH /api/agents/:id
- * Toggle is_active, update category
+ * Toggle is_active, update category (AI_OPERATOR or FOUNDER only)
  */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requireAuth();
+    const user = await requireAuth();
+    requireRole(user, "AI_OPERATOR", "FOUNDER");
 
     const { id } = await params;
     const body = await request.json();

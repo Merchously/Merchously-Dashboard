@@ -246,11 +246,15 @@ function checkLegalBrandRisk(
 }
 
 /**
- * Map agent key to project stage
+ * Suggest the project stage for a given agent key.
+ * This is a recommendation — stage advancement requires human approval.
  */
-export function mapAgentToStage(agentKey: string): Project["stage"] {
+export function suggestStageForAgent(agentKey: string): Project["stage"] {
   return AGENT_STAGE_MAP[agentKey] || "LEAD";
 }
+
+/** @deprecated Use suggestStageForAgent — stages must be human-gated */
+export const mapAgentToStage = suggestStageForAgent;
 
 /**
  * Map tier string (from Airtable/webhook) to DB tier enum

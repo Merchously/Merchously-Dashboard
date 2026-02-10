@@ -1,6 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
+import { STAGE_DISPLAY_NAMES } from "@/lib/constants";
 
 interface Project {
   id: string;
@@ -28,17 +29,7 @@ const PIPELINE_STAGES = [
   "COMPLETE",
 ];
 
-const stageLabels: Record<string, string> = {
-  LEAD: "Lead",
-  QUALIFIED: "Qualified",
-  DISCOVERY: "Discovery",
-  FIT_DECISION: "Fit Decision",
-  PROPOSAL: "Proposal",
-  CLOSED: "Closed",
-  ONBOARDING: "Onboarding",
-  DELIVERY: "Delivery",
-  COMPLETE: "Complete",
-};
+const stageLabels = STAGE_DISPLAY_NAMES;
 
 const tierLabels: Record<string, string> = {
   TIER_1: "Launch",

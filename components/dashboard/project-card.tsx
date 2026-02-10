@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { getStageName } from "@/lib/constants";
 
 interface ProjectCardProps {
   id: string;
@@ -84,7 +85,7 @@ export function ProjectCard({
             {status}
           </Badge>
           <span className="text-xs text-muted-foreground">
-            {stage.replace(/_/g, " ")}
+            {getStageName(stage)}
           </span>
         </div>
         <p className="text-xs text-muted-foreground mt-2">

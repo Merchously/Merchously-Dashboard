@@ -1,6 +1,8 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
+import { users } from "./db";
+import type { UserRole } from "./roles";
 
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
 const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "password";
@@ -8,26 +10,53 @@ const TOKEN_NAME = "auth-token";
 const TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
 
 export interface JWTPayload {
+  userId: string;
   username: string;
+  role: UserRole;
+  displayName: string;
   iat: number;
   exp: number;
 }
 
 /**
- * Verify password against environment variable
+ * Verify user credentials against the users table.
+ * Falls back to legacy password-only auth if no users exist (first-run compatibility).
  */
-export async function verifyPassword(password: string): Promise<boolean> {
-  // For simple password comparison, use direct string comparison
-  // In production, you'd hash the password first
-  return password === DASHBOARD_PASSWORD;
+export async function verifyUser(username: string, password: string): Promise<JWTPayload | null> {
+  // Try multi-user auth first
+  const user = users.getByUsername(username);
+  if (user) {
+    if (!user.is_active) return null;
+    const valid = await bcrypt.compare(password, user.password_hash);
+    if (!valid) return null;
+    return {
+      userId: user.id,
+      username: user.username,
+      role: user.role,
+      displayName: user.display_name,
+    } as JWTPayload;
+  }
+
+  // Legacy fallback: if no users table entries exist, use DASHBOARD_PASSWORD
+  const userCount = users.count();
+  if (userCount === 0 && password === DASHBOARD_PASSWORD) {
+    return {
+      userId: "legacy",
+      username: username || "admin",
+      role: "FOUNDER" as UserRole,
+      displayName: "Admin (Legacy)",
+    } as JWTPayload;
+  }
+
+  return null;
 }
 
 /**
- * Generate JWT token
+ * Generate JWT token with role information
  */
-export function generateToken(username: string = "admin"): string {
+export function generateToken(payload: Pick<JWTPayload, "userId" | "username" | "role" | "displayName">): string {
   return jwt.sign(
-    { username },
+    { userId: payload.userId, username: payload.username, role: payload.role, displayName: payload.displayName },
     JWT_SECRET,
     { expiresIn: "7d" }
   );
@@ -90,7 +119,7 @@ export async function isAuthenticated(): Promise<boolean> {
 }
 
 /**
- * Require authentication (throws redirect if not authenticated)
+ * Require authentication (throws error if not authenticated)
  */
 export async function requireAuth(): Promise<JWTPayload> {
   const token = await getAuthToken();
@@ -104,4 +133,20 @@ export async function requireAuth(): Promise<JWTPayload> {
   }
 
   return payload;
+}
+
+/**
+ * Require specific role(s) — call after requireAuth()
+ */
+export function requireRole(payload: JWTPayload, ...allowedRoles: UserRole[]): void {
+  if (!allowedRoles.includes(payload.role)) {
+    throw new Error(`Access denied. Required role: ${allowedRoles.join(" or ")}. Your role: ${payload.role}`);
+  }
+}
+
+/**
+ * Hash a password for storage
+ */
+export async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 10);
 }

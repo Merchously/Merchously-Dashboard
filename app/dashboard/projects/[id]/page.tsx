@@ -11,7 +11,8 @@ import { ActivityFeed } from "@/components/dashboard/activity-feed";
 import { StageActions } from "@/components/dashboard/stage-actions";
 import { TriggerAgentModal } from "@/components/dashboard/trigger-agent-modal";
 import { CreateEscalationModal } from "@/components/dashboard/create-escalation-modal";
-import { PIPELINE_STAGES, TIER_LABELS } from "@/lib/constants";
+import { FitDecisionModal } from "@/components/dashboard/fit-decision-modal";
+import { PIPELINE_STAGES, TIER_LABELS, getStageName } from "@/lib/constants";
 
 interface Project {
   id: string;
@@ -23,6 +24,10 @@ interface Project {
   icp_level?: string | null;
   sop_step_key?: string | null;
   blockers_json: any;
+  decision_maker?: string | null;
+  trust_score?: number | null;
+  assigned_sales_lead?: string | null;
+  assigned_delivery_lead?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -31,9 +36,18 @@ interface Approval {
   id: string;
   stage_name: string;
   checkpoint_type: string;
+  agent_key: string;
   status: string;
+  sent_at?: string | null;
   created_at: string;
   admin_comments?: string | null;
+}
+
+interface ClientIntel {
+  confidence_score?: number;
+  red_flags?: string[];
+  opportunities?: string[];
+  discovery_summary?: string;
 }
 
 interface Escalation {
@@ -71,11 +85,13 @@ export default function ProjectDetailPage() {
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [escalations, setEscalations] = useState<Escalation[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
+  const [clientIntel, setClientIntel] = useState<ClientIntel | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Modal state
   const [triggerAgentKey, setTriggerAgentKey] = useState<string | null>(null);
   const [showEscalationModal, setShowEscalationModal] = useState(false);
+  const [showFitDecisionModal, setShowFitDecisionModal] = useState(false);
 
   const fetchProject = async () => {
     try {
@@ -86,6 +102,23 @@ export default function ProjectDetailPage() {
         setApprovals(data.approvals || []);
         setEscalations(data.escalations || []);
         setNotes(data.notes || []);
+
+        // Fetch client intelligence from Airtable (M2)
+        if (data.project?.client_email) {
+          fetch(`/api/clients/${encodeURIComponent(data.project.client_email)}`)
+            .then((r) => r.json())
+            .then((clientData) => {
+              if (clientData.success && clientData.client) {
+                setClientIntel({
+                  confidence_score: clientData.client.confidence_score,
+                  red_flags: clientData.client.red_flags,
+                  opportunities: clientData.client.opportunities,
+                  discovery_summary: clientData.client.discovery_summary,
+                });
+              }
+            })
+            .catch(() => {}); // Airtable may not be configured
+        }
       }
     } catch (error) {
       console.error("Error fetching project:", error);
@@ -116,16 +149,53 @@ export default function ProjectDetailPage() {
 
   useSSE("/api/events", { onMessage: handleSSEMessage });
 
-  const handleAdvanceStage = async (nextStage: string) => {
+  const handleAdvanceStage = async (nextStage: string, extra?: { fit_decision_notes?: string }) => {
     try {
       const res = await fetch(`/api/projects/${params.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ stage: nextStage }),
+        body: JSON.stringify({ stage: nextStage, ...extra }),
       });
       if (res.ok) await fetchProject();
     } catch (error) {
       console.error("Error advancing stage:", error);
+    }
+  };
+
+  const handleFitDecision = async (decision: "pass" | "fail", notes: string, icpLevel?: string) => {
+    if (decision === "pass") {
+      // Advance to PROPOSAL with required fit decision notes
+      const extra: any = { fit_decision_notes: notes };
+      if (icpLevel) extra.icp_level = icpLevel;
+      await handleAdvanceStage("PROPOSAL", extra);
+    } else {
+      // Fail — don't advance, just record the decision as a note
+      try {
+        await fetch(`/api/projects/${params.id}/notes`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            content: `Fit Decision: REJECTED — ${notes}`,
+            note_type: "instruction",
+          }),
+        });
+        await fetchProject();
+      } catch (error) {
+        console.error("Error recording fit decision:", error);
+      }
+    }
+  };
+
+  const handleMarkProposalSent = async (approvalId: string) => {
+    try {
+      const res = await fetch(`/api/approvals/${approvalId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mark_sent: true }),
+      });
+      if (res.ok) await fetchProject();
+    } catch (error) {
+      console.error("Error marking proposal sent:", error);
     }
   };
 
@@ -217,7 +287,7 @@ export default function ProjectDetailPage() {
             <div className="bg-muted/50 rounded-lg p-3">
               <p className="text-xs text-muted-foreground">Stage</p>
               <p className="font-semibold mt-1">
-                {project.stage.replace(/_/g, " ")}
+                {getStageName(project.stage)}
               </p>
             </div>
             <div className="bg-muted/50 rounded-lg p-3">
@@ -239,8 +309,81 @@ export default function ProjectDetailPage() {
               </p>
             </div>
           </div>
+
+          {/* Client Record Fields (M1) */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+            <div className="bg-muted/50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Decision Maker</p>
+              <p className="font-semibold mt-1 text-sm">
+                {project.decision_maker || "N/A"}
+              </p>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Trust Score</p>
+              <p className="font-semibold mt-1">
+                {project.trust_score ? `${project.trust_score}/5` : "N/A"}
+              </p>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Sales Lead</p>
+              <p className="font-semibold mt-1 text-sm">
+                {project.assigned_sales_lead || "Unassigned"}
+              </p>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground">Delivery Lead</p>
+              <p className="font-semibold mt-1 text-sm">
+                {project.assigned_delivery_lead || "Unassigned"}
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
+
+      {/* Client Intelligence (M2) */}
+      {clientIntel && (
+        <Card className="border-indigo-200 bg-indigo-50/30">
+          <CardHeader>
+            <CardTitle className="text-base text-indigo-900">
+              Client Intelligence (Airtable)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {clientIntel.confidence_score !== undefined && (
+              <div>
+                <span className="text-xs text-muted-foreground">Confidence Score:</span>
+                <span className="ml-2 font-semibold">{clientIntel.confidence_score}%</span>
+              </div>
+            )}
+            {clientIntel.discovery_summary && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Discovery Summary</p>
+                <p className="text-sm">{clientIntel.discovery_summary}</p>
+              </div>
+            )}
+            {clientIntel.red_flags && clientIntel.red_flags.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Red Flags</p>
+                <div className="flex flex-wrap gap-1">
+                  {clientIntel.red_flags.map((flag, i) => (
+                    <Badge key={i} variant="destructive" className="text-xs">{flag}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {clientIntel.opportunities && clientIntel.opportunities.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Opportunities</p>
+                <div className="flex flex-wrap gap-1">
+                  {clientIntel.opportunities.map((opp, i) => (
+                    <Badge key={i} variant="outline" className="text-xs text-green-700 border-green-300">{opp}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Pipeline Progress */}
       <Card>
@@ -263,7 +406,7 @@ export default function ProjectDetailPage() {
                         : "bg-muted text-muted-foreground"
                     }`}
                   >
-                    {stage.replace(/_/g, " ")}
+                    {getStageName(stage)}
                   </div>
                   {index < PIPELINE_STAGES.length - 1 && (
                     <div
@@ -385,17 +528,36 @@ export default function ProjectDetailPage() {
                             {new Date(approval.created_at).toLocaleString()}
                           </p>
                         </div>
-                        <Badge
-                          variant={
-                            approval.status === "approved"
-                              ? "success"
-                              : approval.status === "rejected"
-                              ? "destructive"
-                              : "warning"
-                          }
-                        >
-                          {approval.status}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <Badge
+                            variant={
+                              approval.status === "approved"
+                                ? "success"
+                                : approval.status === "rejected"
+                                ? "destructive"
+                                : "warning"
+                            }
+                          >
+                            {approval.status}
+                          </Badge>
+                          {/* M4: Proposal sent tracking */}
+                          {approval.agent_key === "proposal" && approval.status === "approved" && (
+                            approval.sent_at ? (
+                              <Badge variant="outline" className="text-xs text-green-700 border-green-300">
+                                Sent {new Date(approval.sent_at).toLocaleDateString()}
+                              </Badge>
+                            ) : (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-xs"
+                                onClick={() => handleMarkProposalSent(approval.id)}
+                              >
+                                Mark Sent
+                              </Button>
+                            )
+                          )}
+                        </div>
                       </div>
                       {approval.admin_comments && (
                         <p className="text-sm text-muted-foreground mt-2 italic">
@@ -419,6 +581,7 @@ export default function ProjectDetailPage() {
             onTriggerAgent={(agentKey) => setTriggerAgentKey(agentKey)}
             onCreateEscalation={() => setShowEscalationModal(true)}
             onTogglePause={handleTogglePause}
+            onFitDecision={() => setShowFitDecisionModal(true)}
           />
 
           <ActivityFeed
@@ -445,6 +608,14 @@ export default function ProjectDetailPage() {
         onClose={() => setShowEscalationModal(false)}
         projectId={project.id}
         onCreated={fetchProject}
+      />
+
+      <FitDecisionModal
+        isOpen={showFitDecisionModal}
+        onClose={() => setShowFitDecisionModal(false)}
+        projectId={project.id}
+        clientName={project.client_name || project.client_email}
+        onDecision={handleFitDecision}
       />
     </div>
   );

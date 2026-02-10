@@ -44,6 +44,37 @@ function initSchema() {
   } catch {
     // Table may not exist yet; schema.sql will create it
   }
+
+  // Add recommended_stage and sent_at to approvals
+  try {
+    const cols = db!.prepare("PRAGMA table_info(approvals)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "recommended_stage")) {
+      db!.exec("ALTER TABLE approvals ADD COLUMN recommended_stage TEXT");
+    }
+    if (!cols.some((c) => c.name === "sent_at")) {
+      db!.exec("ALTER TABLE approvals ADD COLUMN sent_at DATETIME");
+    }
+  } catch {
+    // Table may not exist yet; schema.sql will create it
+  }
+
+  // Add M1 client record fields to projects
+  try {
+    const cols = db!.prepare("PRAGMA table_info(projects)").all() as { name: string }[];
+    const newCols = [
+      { name: "decision_maker", sql: "ALTER TABLE projects ADD COLUMN decision_maker TEXT" },
+      { name: "trust_score", sql: "ALTER TABLE projects ADD COLUMN trust_score INTEGER" },
+      { name: "assigned_sales_lead", sql: "ALTER TABLE projects ADD COLUMN assigned_sales_lead TEXT" },
+      { name: "assigned_delivery_lead", sql: "ALTER TABLE projects ADD COLUMN assigned_delivery_lead TEXT" },
+    ];
+    for (const col of newCols) {
+      if (!cols.some((c) => c.name === col.name)) {
+        db!.exec(col.sql);
+      }
+    }
+  } catch {
+    // Table may not exist yet; schema.sql will create it
+  }
 }
 
 // Types
@@ -55,11 +86,13 @@ export interface Approval {
   checkpoint_type: "proposal_review" | "discovery_summary" | "tier_execution" | "quality_check";
   agent_payload: string; // JSON string
   agent_response: string; // JSON string
+  recommended_stage?: string | null; // Stage the agent suggests (human must approve to advance)
   status: "pending" | "approved" | "rejected" | "edited";
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   admin_comments?: string | null;
   edited_response?: string | null;
+  sent_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -101,6 +134,10 @@ export interface Project {
   icp_level?: "A" | "B" | "C" | null;
   sop_step_key?: string | null;
   blockers_json: string;
+  decision_maker?: string | null;
+  trust_score?: number | null;
+  assigned_sales_lead?: string | null;
+  assigned_delivery_lead?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -169,6 +206,53 @@ export interface ApprovalPolicyAudit {
   created_at: string;
 }
 
+export interface User {
+  id: string;
+  username: string;
+  display_name: string;
+  role: "FOUNDER" | "SALES_LEAD" | "DELIVERY_LEAD" | "CREATIVE_SPECIALIST" | "AI_OPERATOR";
+  password_hash: string;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SOPDefinition {
+  id: string;
+  tier: "TIER_1" | "TIER_2" | "TIER_3";
+  step_order: number;
+  step_key: string;
+  step_name: string;
+  description?: string | null;
+  expected_duration_hours: number;
+  required_inputs: string; // JSON array
+  created_at: string;
+}
+
+export interface SOPProgress {
+  id: string;
+  project_id: string;
+  step_key: string;
+  status: "pending" | "in_progress" | "blocked" | "completed" | "skipped";
+  started_at?: string | null;
+  completed_at?: string | null;
+  expected_completion_at?: string | null;
+  blockers: string; // JSON array
+  missing_inputs: string; // JSON array
+  notes?: string | null;
+  updated_at: string;
+}
+
+export interface ClientResponsiveness {
+  id: string;
+  project_id: string;
+  request_type: string;
+  description?: string | null;
+  requested_at: string;
+  responded_at?: string | null;
+  created_at: string;
+}
+
 // Approval CRUD operations
 export const approvals = {
   create: (
@@ -179,8 +263,8 @@ export const approvals = {
     const stmt = database.prepare(`
       INSERT INTO approvals (
         id, client_email, agent_key, stage_name, checkpoint_type,
-        agent_payload, agent_response
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        agent_payload, agent_response, recommended_stage
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -190,7 +274,8 @@ export const approvals = {
       data.stage_name,
       data.checkpoint_type,
       data.agent_payload,
-      data.agent_response
+      data.agent_response,
+      data.recommended_stage || null
     );
 
     return approvals.getById(id)!;
@@ -236,6 +321,7 @@ export const approvals = {
         | "reviewed_at"
         | "admin_comments"
         | "edited_response"
+        | "sent_at"
       >
     >
   ): Approval | null => {
@@ -262,6 +348,10 @@ export const approvals = {
     if (data.edited_response !== undefined) {
       fields.push("edited_response = ?");
       values.push(data.edited_response);
+    }
+    if (data.sent_at !== undefined) {
+      fields.push("sent_at = ?");
+      values.push(data.sent_at);
     }
 
     if (fields.length === 0) {
@@ -452,6 +542,10 @@ export const projects = {
         | "blockers_json"
         | "client_name"
         | "icp_level"
+        | "decision_maker"
+        | "trust_score"
+        | "assigned_sales_lead"
+        | "assigned_delivery_lead"
       >
     >
   ): Project | null => {
@@ -482,6 +576,22 @@ export const projects = {
     if (data.icp_level !== undefined) {
       fields.push("icp_level = ?");
       values.push(data.icp_level);
+    }
+    if (data.decision_maker !== undefined) {
+      fields.push("decision_maker = ?");
+      values.push(data.decision_maker);
+    }
+    if (data.trust_score !== undefined) {
+      fields.push("trust_score = ?");
+      values.push(data.trust_score);
+    }
+    if (data.assigned_sales_lead !== undefined) {
+      fields.push("assigned_sales_lead = ?");
+      values.push(data.assigned_sales_lead);
+    }
+    if (data.assigned_delivery_lead !== undefined) {
+      fields.push("assigned_delivery_lead = ?");
+      values.push(data.assigned_delivery_lead);
     }
 
     if (fields.length === 0) {
@@ -857,6 +967,14 @@ export const agentTriggers = {
     return stmt.all(project_id, limit) as AgentTrigger[];
   },
 
+  getAll: (limit = 100, offset = 0): AgentTrigger[] => {
+    const database = getDb();
+    const stmt = database.prepare(
+      "SELECT * FROM agent_triggers ORDER BY created_at DESC LIMIT ? OFFSET ?"
+    );
+    return stmt.all(limit, offset) as AgentTrigger[];
+  },
+
   update: (
     id: string,
     data: Partial<Pick<AgentTrigger, "status" | "response_status" | "error_message">>
@@ -890,6 +1008,275 @@ export const agentTriggers = {
   },
 };
 
+// User CRUD operations
+export const users = {
+  create: (
+    data: Omit<User, "id" | "created_at" | "updated_at" | "is_active"> &
+      Partial<Pick<User, "is_active">>
+  ): User => {
+    const database = getDb();
+    const id = uuidv4();
+    const stmt = database.prepare(`
+      INSERT INTO users (id, username, display_name, role, password_hash, is_active)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      id,
+      data.username,
+      data.display_name,
+      data.role,
+      data.password_hash,
+      data.is_active !== undefined ? data.is_active : 1
+    );
+
+    return users.getById(id)!;
+  },
+
+  getById: (id: string): User | null => {
+    const database = getDb();
+    return database.prepare("SELECT * FROM users WHERE id = ?").get(id) as User | null;
+  },
+
+  getByUsername: (username: string): User | null => {
+    const database = getDb();
+    return database.prepare("SELECT * FROM users WHERE username = ?").get(username) as User | null;
+  },
+
+  getAll: (): User[] => {
+    const database = getDb();
+    return database.prepare("SELECT * FROM users ORDER BY created_at ASC").all() as User[];
+  },
+
+  update: (
+    id: string,
+    data: Partial<Pick<User, "display_name" | "role" | "password_hash" | "is_active">>
+  ): User | null => {
+    const database = getDb();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (data.display_name !== undefined) { fields.push("display_name = ?"); values.push(data.display_name); }
+    if (data.role !== undefined) { fields.push("role = ?"); values.push(data.role); }
+    if (data.password_hash !== undefined) { fields.push("password_hash = ?"); values.push(data.password_hash); }
+    if (data.is_active !== undefined) { fields.push("is_active = ?"); values.push(data.is_active); }
+
+    if (fields.length === 0) return users.getById(id);
+
+    values.push(id);
+    database.prepare(`UPDATE users SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    return users.getById(id);
+  },
+
+  count: (): number => {
+    const database = getDb();
+    const row = database.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
+    return row.count;
+  },
+};
+
+// SOP Definitions CRUD operations
+export const sopDefinitions = {
+  create: (
+    data: Omit<SOPDefinition, "id" | "created_at">
+  ): SOPDefinition => {
+    const database = getDb();
+    const id = uuidv4();
+    const stmt = database.prepare(`
+      INSERT INTO sop_definitions (id, tier, step_order, step_key, step_name, description, expected_duration_hours, required_inputs)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      id,
+      data.tier,
+      data.step_order,
+      data.step_key,
+      data.step_name,
+      data.description || null,
+      data.expected_duration_hours,
+      data.required_inputs || "[]"
+    );
+    return sopDefinitions.getById(id)!;
+  },
+
+  getById: (id: string): SOPDefinition | null => {
+    const database = getDb();
+    return database.prepare("SELECT * FROM sop_definitions WHERE id = ?").get(id) as SOPDefinition | null;
+  },
+
+  getByTier: (tier: string): SOPDefinition[] => {
+    const database = getDb();
+    return database.prepare(
+      "SELECT * FROM sop_definitions WHERE tier = ? ORDER BY step_order ASC"
+    ).all(tier) as SOPDefinition[];
+  },
+
+  getByStepKey: (step_key: string): SOPDefinition | null => {
+    const database = getDb();
+    return database.prepare("SELECT * FROM sop_definitions WHERE step_key = ?").get(step_key) as SOPDefinition | null;
+  },
+
+  getAll: (): SOPDefinition[] => {
+    const database = getDb();
+    return database.prepare("SELECT * FROM sop_definitions ORDER BY tier, step_order ASC").all() as SOPDefinition[];
+  },
+};
+
+// SOP Progress CRUD operations
+export const sopProgress = {
+  create: (
+    data: Omit<SOPProgress, "id" | "updated_at">
+  ): SOPProgress => {
+    const database = getDb();
+    const id = uuidv4();
+    const stmt = database.prepare(`
+      INSERT INTO sop_progress (id, project_id, step_key, status, started_at, completed_at, expected_completion_at, blockers, missing_inputs, notes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      id,
+      data.project_id,
+      data.step_key,
+      data.status || "pending",
+      data.started_at || null,
+      data.completed_at || null,
+      data.expected_completion_at || null,
+      data.blockers || "[]",
+      data.missing_inputs || "[]",
+      data.notes || null
+    );
+    return sopProgress.getById(id)!;
+  },
+
+  getById: (id: string): SOPProgress | null => {
+    const database = getDb();
+    return database.prepare("SELECT * FROM sop_progress WHERE id = ?").get(id) as SOPProgress | null;
+  },
+
+  getByProject: (project_id: string): SOPProgress[] => {
+    const database = getDb();
+    return database.prepare(
+      `SELECT sp.*, sd.step_name, sd.step_order, sd.expected_duration_hours, sd.description as step_description
+       FROM sop_progress sp
+       JOIN sop_definitions sd ON sp.step_key = sd.step_key
+       WHERE sp.project_id = ?
+       ORDER BY sd.step_order ASC`
+    ).all(project_id) as (SOPProgress & { step_name: string; step_order: number; expected_duration_hours: number; step_description?: string })[];
+  },
+
+  getByProjectAndStep: (project_id: string, step_key: string): SOPProgress | null => {
+    const database = getDb();
+    return database.prepare(
+      "SELECT * FROM sop_progress WHERE project_id = ? AND step_key = ?"
+    ).get(project_id, step_key) as SOPProgress | null;
+  },
+
+  update: (
+    id: string,
+    data: Partial<Pick<SOPProgress, "status" | "started_at" | "completed_at" | "expected_completion_at" | "blockers" | "missing_inputs" | "notes">>
+  ): SOPProgress | null => {
+    const database = getDb();
+    const fields: string[] = [];
+    const values: any[] = [];
+
+    if (data.status !== undefined) { fields.push("status = ?"); values.push(data.status); }
+    if (data.started_at !== undefined) { fields.push("started_at = ?"); values.push(data.started_at); }
+    if (data.completed_at !== undefined) { fields.push("completed_at = ?"); values.push(data.completed_at); }
+    if (data.expected_completion_at !== undefined) { fields.push("expected_completion_at = ?"); values.push(data.expected_completion_at); }
+    if (data.blockers !== undefined) { fields.push("blockers = ?"); values.push(data.blockers); }
+    if (data.missing_inputs !== undefined) { fields.push("missing_inputs = ?"); values.push(data.missing_inputs); }
+    if (data.notes !== undefined) { fields.push("notes = ?"); values.push(data.notes); }
+
+    if (fields.length === 0) return sopProgress.getById(id);
+
+    values.push(id);
+    database.prepare(`UPDATE sop_progress SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    return sopProgress.getById(id);
+  },
+
+  initForProject: (project_id: string, tier: string): SOPProgress[] => {
+    const definitions = sopDefinitions.getByTier(tier);
+    const results: SOPProgress[] = [];
+    for (const def of definitions) {
+      const existing = sopProgress.getByProjectAndStep(project_id, def.step_key);
+      if (!existing) {
+        results.push(sopProgress.create({
+          project_id,
+          step_key: def.step_key,
+          status: "pending",
+          blockers: "[]",
+          missing_inputs: "[]",
+        }));
+      } else {
+        results.push(existing);
+      }
+    }
+    return results;
+  },
+};
+
+// Client Responsiveness CRUD operations
+export const clientResponsiveness = {
+  create: (
+    data: Omit<ClientResponsiveness, "id" | "created_at">
+  ): ClientResponsiveness => {
+    const database = getDb();
+    const id = uuidv4();
+    const stmt = database.prepare(`
+      INSERT INTO client_responsiveness (id, project_id, request_type, description, requested_at, responded_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      id,
+      data.project_id,
+      data.request_type,
+      data.description || null,
+      data.requested_at || new Date().toISOString(),
+      data.responded_at || null
+    );
+    return clientResponsiveness.getById(id)!;
+  },
+
+  getById: (id: string): ClientResponsiveness | null => {
+    const database = getDb();
+    return database.prepare("SELECT * FROM client_responsiveness WHERE id = ?").get(id) as ClientResponsiveness | null;
+  },
+
+  getByProject: (project_id: string): ClientResponsiveness[] => {
+    const database = getDb();
+    return database.prepare(
+      "SELECT * FROM client_responsiveness WHERE project_id = ? ORDER BY requested_at DESC"
+    ).all(project_id) as ClientResponsiveness[];
+  },
+
+  getPending: (project_id: string): ClientResponsiveness[] => {
+    const database = getDb();
+    return database.prepare(
+      "SELECT * FROM client_responsiveness WHERE project_id = ? AND responded_at IS NULL ORDER BY requested_at ASC"
+    ).all(project_id) as ClientResponsiveness[];
+  },
+
+  markResponded: (id: string): ClientResponsiveness | null => {
+    const database = getDb();
+    database.prepare(
+      "UPDATE client_responsiveness SET responded_at = ? WHERE id = ?"
+    ).run(new Date().toISOString(), id);
+    return clientResponsiveness.getById(id);
+  },
+
+  getAverageResponseTime: (project_id: string): number | null => {
+    const database = getDb();
+    const row = database.prepare(`
+      SELECT AVG(
+        (julianday(responded_at) - julianday(requested_at)) * 24
+      ) as avg_hours
+      FROM client_responsiveness
+      WHERE project_id = ? AND responded_at IS NOT NULL
+    `).get(project_id) as { avg_hours: number | null };
+    return row?.avg_hours || null;
+  },
+};
+
 // Close database connection (call on app shutdown)
 export function closeDb() {
   if (db) {
@@ -909,5 +1296,9 @@ export default {
   policyAudit,
   projectNotes,
   agentTriggers,
+  users,
+  sopDefinitions,
+  sopProgress,
+  clientResponsiveness,
   closeDb,
 };

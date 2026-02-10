@@ -78,6 +78,29 @@ export const AGENT_STAGE_MAP: Record<string, Project["stage"]> = {
 };
 
 // =============================================
+// Stage display names (aligned with architecture doc)
+// =============================================
+
+export const STAGE_DISPLAY_NAMES: Record<string, string> = {
+  LEAD: "Lead Captured",
+  QUALIFIED: "Qualified",
+  DISCOVERY: "Discovery",
+  FIT_DECISION: "Internal Review",
+  PROPOSAL: "Proposal",
+  CLOSED: "Closed Won",
+  ONBOARDING: "Onboarding",
+  DELIVERY: "Active Delivery",
+  COMPLETE: "Complete / Transition",
+};
+
+/**
+ * Get the display name for a stage, with fallback.
+ */
+export function getStageName(stage: string): string {
+  return STAGE_DISPLAY_NAMES[stage] || stage.replace(/_/g, " ");
+}
+
+// =============================================
 // Tier labels
 // =============================================
 
@@ -110,3 +133,23 @@ export const ESCALATION_CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const ESCALATION_LEVELS = ["L1", "L2", "L3"] as const;
+
+// =============================================
+// Stage transition validation helpers
+// =============================================
+
+/**
+ * Get the next sequential stage, or null if at COMPLETE.
+ */
+export function getNextStage(current: PipelineStage): PipelineStage | null {
+  const action = STAGE_ACTIONS[current];
+  return action ? (action.nextStage as PipelineStage) : null;
+}
+
+/**
+ * Check if a stage transition is the next sequential step.
+ */
+export function isValidTransition(from: PipelineStage, to: PipelineStage): boolean {
+  const next = getNextStage(from);
+  return next === to;
+}

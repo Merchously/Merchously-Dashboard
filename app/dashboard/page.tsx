@@ -9,8 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Clock, AlertTriangle, PauseCircle, CheckCircle, Plus } from "lucide-react";
+import { Clock, AlertTriangle, PauseCircle, CheckCircle, Plus, UserPlus } from "lucide-react";
 import { CreateProjectModal } from "@/components/dashboard/create-project-modal";
+import { TIER_LABELS, getStageName } from "@/lib/constants";
 
 interface Approval {
   id: string;
@@ -44,11 +45,23 @@ interface Project {
   status: string;
 }
 
+interface PendingProject {
+  approval_id: string;
+  client_email: string;
+  agent_key: string;
+  stage_name: string;
+  recommended_stage: string | null;
+  tier: string;
+  client_name: string | null;
+  created_at: string;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [openEscalations, setOpenEscalations] = useState<Escalation[]>([]);
   const [pausedProjects, setPausedProjects] = useState<Project[]>([]);
+  const [pendingProjects, setPendingProjects] = useState<PendingProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedApproval, setSelectedApproval] = useState<Approval | null>(
     null
@@ -58,22 +71,25 @@ export default function DashboardPage() {
 
   const fetchData = async () => {
     try {
-      const [approvalsRes, escalationsRes, projectsRes] = await Promise.all([
+      const [approvalsRes, escalationsRes, projectsRes, pendingRes] = await Promise.all([
         fetch("/api/approvals"),
         fetch("/api/escalations?status=OPEN"),
         fetch("/api/projects?status=PAUSED"),
+        fetch("/api/pending-projects"),
       ]);
 
-      const [approvalsData, escalationsData, projectsData] = await Promise.all([
+      const [approvalsData, escalationsData, projectsData, pendingData] = await Promise.all([
         approvalsRes.json(),
         escalationsRes.json(),
         projectsRes.json(),
+        pendingRes.json(),
       ]);
 
       if (approvalsData.success) setApprovals(approvalsData.approvals);
       if (escalationsData.success)
         setOpenEscalations(escalationsData.escalations);
       if (projectsData.success) setPausedProjects(projectsData.projects);
+      if (pendingData.success) setPendingProjects(pendingData.pending_projects);
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
     } finally {
@@ -92,6 +108,7 @@ export default function DashboardPage() {
       event.type === "escalation.resolved" ||
       event.type === "project.updated" ||
       event.type === "project.created" ||
+      event.type === "project.creation_pending" ||
       event.type === "approval.policy_blocked"
     ) {
       fetchData();
@@ -296,6 +313,48 @@ export default function DashboardPage() {
           </Card>
         </div>
 
+        {/* Pending Project Creations — human authorization required */}
+        {pendingProjects.length > 0 && (
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div className="flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-blue-600" />
+                <CardTitle className="text-blue-900">
+                  Pending Project Creations
+                </CardTitle>
+              </div>
+              <Badge variant="secondary" className="bg-blue-100 text-blue-700">
+                {pendingProjects.length}
+              </Badge>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-blue-100">
+                {pendingProjects.map((pp) => (
+                  <div key={pp.approval_id} className="px-6 py-4 flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-blue-900">
+                        {pp.client_name || pp.client_email}
+                      </p>
+                      <p className="text-sm text-blue-700">
+                        {pp.stage_name} &middot; {TIER_LABELS[pp.tier] || pp.tier}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setShowCreateProject(true);
+                      }}
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Create Project
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Two-column layout for widgets */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Pending Approvals */}
@@ -416,7 +475,7 @@ export default function DashboardPage() {
                             {project.client_name || project.client_email}
                           </p>
                           <p className="text-sm text-muted-foreground">
-                            {project.stage.replace(/_/g, " ")}
+                            {getStageName(project.stage)}
                           </p>
                         </div>
                         <Badge variant="warning">PAUSED</Badge>

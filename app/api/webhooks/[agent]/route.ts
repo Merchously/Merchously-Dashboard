@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { approvals, webhookEvents, projects, agents } from "@/lib/db";
 import { broadcast } from "@/lib/sse";
-import { mapAgentToStage, mapTierString } from "@/lib/policy";
+import { suggestStageForAgent, mapTierString } from "@/lib/policy";
 
 // Agent key mapping for validation
 const validAgentKeys = [
@@ -86,7 +86,8 @@ export async function POST(
       response_status: 200,
     });
 
-    // Create approval record
+    // Create approval record with recommended stage (human must approve to advance)
+    const recommendedStage = suggestStageForAgent(agent);
     const approval = approvals.create({
       client_email: email,
       agent_key: agent,
@@ -94,6 +95,7 @@ export async function POST(
       checkpoint_type: checkpointTypes[agent] || "discovery_summary",
       agent_payload: JSON.stringify(payload || {}),
       agent_response: JSON.stringify(response),
+      recommended_stage: recommendedStage,
     });
 
     // Broadcast to all connected SSE clients
@@ -110,29 +112,48 @@ export async function POST(
       },
     });
 
-    // Upsert project for this client
+    // Check if a project already exists for this client+tier
     const tier = mapTierString(
       body.tier || response?.tier || response?.recommended_tier || "Launch"
     );
-    const stage = mapAgentToStage(agent);
 
-    const project = projects.upsertByEmailAndTier(email, tier, {
-      stage,
-      client_name: body.name || body.client_name || null,
-      icp_level: response?.icp_level || null,
-      sop_step_key: body.sop_step_key || null,
-    });
+    const existingProjects = projects.getByEmail(email)
+      .filter((p) => p.tier === tier);
 
-    broadcast({
-      type: "project.updated",
-      data: {
-        id: project.id,
-        client_email: project.client_email,
-        stage: project.stage,
-        tier: project.tier,
-        status: project.status,
-      },
-    });
+    let project = existingProjects[0] || null;
+
+    if (project) {
+      // Update existing project fields (but NOT stage — that's human-gated)
+      project = projects.update(project.id, {
+        client_name: body.name || body.client_name || project.client_name || null,
+        icp_level: response?.icp_level || project.icp_level || null,
+        sop_step_key: body.sop_step_key || project.sop_step_key || null,
+      })!;
+
+      broadcast({
+        type: "project.updated",
+        data: {
+          id: project.id,
+          client_email: project.client_email,
+          stage: project.stage,
+          tier: project.tier,
+          status: project.status,
+        },
+      });
+    } else {
+      // No project exists — DO NOT auto-create. Signal that human must create it.
+      broadcast({
+        type: "project.creation_pending",
+        data: {
+          approval_id: approval.id,
+          client_email: email,
+          tier,
+          agent_key: agent,
+          recommended_stage: recommendedStage,
+          client_name: body.name || body.client_name || null,
+        },
+      });
+    }
 
     // Update agent event count
     agents.incrementEventCount(agent);
@@ -148,8 +169,11 @@ export async function POST(
     return NextResponse.json({
       success: true,
       approval_id: approval.id,
-      project_id: project.id,
-      message: "Approval created successfully",
+      project_id: project?.id || null,
+      project_creation_pending: !project,
+      message: project
+        ? "Approval created successfully"
+        : "Approval created — project creation requires human authorization",
     });
   } catch (error) {
     console.error("Webhook error:", error);

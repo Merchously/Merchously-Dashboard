@@ -13,12 +13,16 @@ CREATE TABLE IF NOT EXISTS approvals (
   agent_payload TEXT NOT NULL,      -- JSON: what was sent to agent
   agent_response TEXT NOT NULL,     -- JSON: agent's response
 
+  -- Stage recommendation (set by webhook, acted on by human approval)
+  recommended_stage TEXT,            -- Stage the agent suggests advancing to
+
   -- Approval state
   status TEXT NOT NULL DEFAULT 'pending',  -- 'pending', 'approved', 'rejected', 'edited'
   reviewed_by TEXT,                 -- Admin name (default: 'Admin')
   reviewed_at DATETIME,             -- ISO timestamp
   admin_comments TEXT,              -- Feedback/notes
   edited_response TEXT,             -- Modified JSON if edited
+  sent_at DATETIME,                 -- When the proposal/deliverable was sent to client
 
   -- Metadata
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -89,6 +93,10 @@ CREATE TABLE IF NOT EXISTS projects (
   icp_level TEXT CHECK(icp_level IS NULL OR icp_level IN ('A','B','C')),
   sop_step_key TEXT,                      -- e.g. 'T1_STEP_3_DESIGN'
   blockers_json TEXT DEFAULT '[]',        -- JSON array of blocker strings
+  decision_maker TEXT,                    -- Primary decision-maker name
+  trust_score INTEGER CHECK(trust_score IS NULL OR (trust_score >= 1 AND trust_score <= 5)),
+  assigned_sales_lead TEXT,               -- Username of assigned sales lead
+  assigned_delivery_lead TEXT,            -- Username of assigned delivery lead
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(client_email, tier)              -- One project per client per tier
@@ -207,3 +215,89 @@ CREATE TABLE IF NOT EXISTS agent_triggers (
 CREATE INDEX IF NOT EXISTS idx_agent_triggers_project ON agent_triggers(project_id);
 CREATE INDEX IF NOT EXISTS idx_agent_triggers_agent ON agent_triggers(agent_key);
 CREATE INDEX IF NOT EXISTS idx_agent_triggers_created ON agent_triggers(created_at DESC);
+
+-- =============================================
+-- RBAC: Users & Roles
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,                    -- UUID
+  username TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  role TEXT NOT NULL
+    CHECK(role IN ('FOUNDER','SALES_LEAD','DELIVERY_LEAD','CREATIVE_SPECIALIST','AI_OPERATOR')),
+  password_hash TEXT NOT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1,  -- SQLite boolean (0/1)
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+CREATE TRIGGER IF NOT EXISTS update_users_timestamp
+AFTER UPDATE ON users
+BEGIN
+  UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- =============================================
+-- Delivery Command Center Tables
+-- =============================================
+
+-- SOP definitions (per tier, defines the ordered steps)
+CREATE TABLE IF NOT EXISTS sop_definitions (
+  id TEXT PRIMARY KEY,                    -- UUID
+  tier TEXT NOT NULL CHECK(tier IN ('TIER_1','TIER_2','TIER_3')),
+  step_order INTEGER NOT NULL,            -- Sequential order within tier
+  step_key TEXT NOT NULL UNIQUE,          -- e.g. 'T1_STEP_1_KICKOFF'
+  step_name TEXT NOT NULL,                -- Human-readable: 'Kickoff Call'
+  description TEXT,                       -- What this step involves
+  expected_duration_hours INTEGER NOT NULL DEFAULT 24,
+  required_inputs TEXT DEFAULT '[]',      -- JSON array of required inputs
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sop_definitions_tier ON sop_definitions(tier);
+CREATE INDEX IF NOT EXISTS idx_sop_definitions_order ON sop_definitions(tier, step_order);
+
+-- SOP progress (tracks each step's status per project)
+CREATE TABLE IF NOT EXISTS sop_progress (
+  id TEXT PRIMARY KEY,                    -- UUID
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  step_key TEXT NOT NULL REFERENCES sop_definitions(step_key),
+  status TEXT NOT NULL DEFAULT 'pending'
+    CHECK(status IN ('pending','in_progress','blocked','completed','skipped')),
+  started_at DATETIME,
+  completed_at DATETIME,
+  expected_completion_at DATETIME,        -- Calculated from started_at + expected_duration
+  blockers TEXT DEFAULT '[]',             -- JSON array of blocker strings
+  missing_inputs TEXT DEFAULT '[]',       -- JSON array of missing input items
+  notes TEXT,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(project_id, step_key)           -- One progress entry per step per project
+);
+
+CREATE INDEX IF NOT EXISTS idx_sop_progress_project ON sop_progress(project_id);
+CREATE INDEX IF NOT EXISTS idx_sop_progress_status ON sop_progress(status);
+CREATE INDEX IF NOT EXISTS idx_sop_progress_step ON sop_progress(step_key);
+
+CREATE TRIGGER IF NOT EXISTS update_sop_progress_timestamp
+AFTER UPDATE ON sop_progress
+BEGIN
+  UPDATE sop_progress SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- Client responsiveness (tracks response times for requests)
+CREATE TABLE IF NOT EXISTS client_responsiveness (
+  id TEXT PRIMARY KEY,                    -- UUID
+  project_id TEXT NOT NULL REFERENCES projects(id),
+  request_type TEXT NOT NULL,             -- 'asset_upload', 'feedback', 'approval', 'info_request'
+  description TEXT,                       -- What was requested
+  requested_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  responded_at DATETIME,                  -- NULL if still waiting
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_client_resp_project ON client_responsiveness(project_id);
+CREATE INDEX IF NOT EXISTS idx_client_resp_pending ON client_responsiveness(responded_at);

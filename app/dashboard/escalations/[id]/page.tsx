@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useSSE } from "@/lib/hooks/use-sse";
+import { getStageName } from "@/lib/constants";
 
 interface Escalation {
   id: string;
@@ -245,7 +246,7 @@ export default function EscalationDetailPage() {
                 {project.client_name || project.client_email}
               </p>
               <p className="text-sm text-slate-500">
-                {project.stage.replace(/_/g, " ")} &middot;{" "}
+                {getStageName(project.stage)} &middot;{" "}
                 {project.tier.replace("TIER_", "Tier ")}
               </p>
             </div>

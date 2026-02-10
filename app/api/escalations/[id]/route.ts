@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { escalations, projects } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { requireAuth, requireRole } from "@/lib/auth";
 import { broadcast } from "@/lib/sse";
 
 /**
@@ -58,6 +58,8 @@ export async function PATCH(
 ) {
   try {
     const user = await requireAuth();
+    // L2/L3 escalations can only be resolved by FOUNDER
+    requireRole(user, "FOUNDER", "SALES_LEAD", "DELIVERY_LEAD");
 
     const { id } = await params;
     const body = await request.json();

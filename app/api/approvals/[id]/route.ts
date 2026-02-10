@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { approvals, projects, escalations, policyAudit } from "@/lib/db";
-import { requireAuth } from "@/lib/auth";
+import { approvals, projects, escalations, policyAudit, projectNotes } from "@/lib/db";
+import { requireAuth, requireRole } from "@/lib/auth";
 import { broadcast } from "@/lib/sse";
 import { enforceApprovalPolicy } from "@/lib/policy";
+import { STAGE_ACTIONS } from "@/lib/constants";
 
 /**
  * GET /api/approvals/:id
@@ -67,13 +68,33 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Require authentication
+    // Require authentication + role check
     const user = await requireAuth();
+    requireRole(user, "FOUNDER", "SALES_LEAD", "DELIVERY_LEAD");
 
     const { id } = await params;
     const body = await request.json();
 
-    const { status, admin_comments, edited_response } = body;
+    const { status, admin_comments, edited_response, mark_sent } = body;
+
+    // M4: Mark proposal as sent (separate from approval status changes)
+    if (mark_sent) {
+      const existing = approvals.getById(id);
+      if (!existing) {
+        return NextResponse.json(
+          { success: false, error: "Approval not found" },
+          { status: 404 }
+        );
+      }
+      const updated = approvals.update(id, {
+        sent_at: new Date().toISOString(),
+      });
+      return NextResponse.json({
+        success: true,
+        approval: updated,
+        message: "Proposal marked as sent",
+      });
+    }
 
     // Validate status
     if (!status || !["approved", "rejected", "edited"].includes(status)) {
@@ -188,9 +209,39 @@ export async function PATCH(
       );
     }
 
-    // TODO: Call n8n workflow to execute approved action
-    // For now, we'll just update the database
-    // In Phase 4, we'll add webhook calls to n8n here
+    // When approved, advance the linked project's stage (human-gated stage advancement)
+    if (status === "approved" && existingApproval.recommended_stage) {
+      const clientProjects = projects.getByEmail(existingApproval.client_email);
+      if (clientProjects.length > 0) {
+        const project = clientProjects[0];
+        const stageAction = STAGE_ACTIONS[project.stage];
+
+        // Only advance if the project is at the stage before the recommended stage
+        if (stageAction && stageAction.nextStage === existingApproval.recommended_stage) {
+          projects.update(project.id, { stage: stageAction.nextStage as any });
+
+          projectNotes.create({
+            project_id: project.id,
+            author: user.username || "admin",
+            content: `Stage advanced from ${project.stage} to ${stageAction.nextStage} (approval ${existingApproval.checkpoint_type} approved)`,
+            note_type: "stage_change",
+          });
+
+          broadcast({
+            type: "project.updated",
+            data: {
+              id: project.id,
+              client_email: project.client_email,
+              stage: stageAction.nextStage,
+              status: project.status,
+              reason: `Approval approved: ${existingApproval.stage_name}`,
+            },
+          });
+        }
+      }
+    }
+
+    // TODO: Call n8n workflow to execute approved action (Phase 4)
 
     // Parse JSON fields for response
     const parsedApproval = {
