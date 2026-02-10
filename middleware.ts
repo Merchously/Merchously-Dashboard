@@ -6,7 +6,7 @@ import { verifyTokenEdge } from "@/lib/auth-edge";
 const protectedPaths = ["/dashboard"];
 
 // Paths that should redirect to dashboard if already authenticated
-const authPaths = ["/login"];
+const authPaths = ["/login", "/signup"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

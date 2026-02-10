@@ -1068,10 +1068,26 @@ export const users = {
     return users.getById(id);
   },
 
-  count: (): number => {
+  count: (activeOnly = true): number => {
     const database = getDb();
-    const row = database.prepare("SELECT COUNT(*) as count FROM users").get() as { count: number };
+    const sql = activeOnly
+      ? "SELECT COUNT(*) as count FROM users WHERE is_active = 1"
+      : "SELECT COUNT(*) as count FROM users";
+    const row = database.prepare(sql).get() as { count: number };
     return row.count;
+  },
+
+  getByStatus: (is_active: number): User[] => {
+    const database = getDb();
+    return database.prepare(
+      "SELECT * FROM users WHERE is_active = ? ORDER BY created_at DESC"
+    ).all(is_active) as User[];
+  },
+
+  delete: (id: string): boolean => {
+    const database = getDb();
+    const result = database.prepare("DELETE FROM users WHERE id = ?").run(id);
+    return result.changes > 0;
   },
 };
 

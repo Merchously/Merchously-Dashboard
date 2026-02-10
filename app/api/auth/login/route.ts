@@ -14,7 +14,18 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify credentials (supports both multi-user and legacy single-password)
-    const userPayload = await verifyUser(username || "admin", password);
+    let userPayload;
+    try {
+      userPayload = await verifyUser(username || "admin", password);
+    } catch (err: any) {
+      if (err.message === "ACCOUNT_PENDING") {
+        return NextResponse.json(
+          { error: "Your account is pending admin approval. Please check back later." },
+          { status: 403 }
+        );
+      }
+      throw err;
+    }
     if (!userPayload) {
       return NextResponse.json(
         { error: "Invalid credentials" },

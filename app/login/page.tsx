@@ -2,6 +2,7 @@
 
 import { useState, FormEvent, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import {
   Card,
   CardContent,
@@ -98,7 +99,10 @@ function LoginForm() {
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="justify-center">
+        <CardFooter className="flex flex-col items-center gap-2">
+          <Link href="/signup" className="text-sm text-primary hover:underline">
+            Don&apos;t have an account? Sign up
+          </Link>
           <p className="text-xs text-muted-foreground">
             Merchously Dashboard v1.0
           </p>

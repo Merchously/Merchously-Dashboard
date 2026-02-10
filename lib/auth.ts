@@ -26,9 +26,9 @@ export async function verifyUser(username: string, password: string): Promise<JW
   // Try multi-user auth first
   const user = users.getByUsername(username);
   if (user) {
-    if (!user.is_active) return null;
     const valid = await bcrypt.compare(password, user.password_hash);
     if (!valid) return null;
+    if (!user.is_active) throw new Error("ACCOUNT_PENDING");
     return {
       userId: user.id,
       username: user.username,

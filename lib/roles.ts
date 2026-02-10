@@ -74,7 +74,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
  * Navigation items visible per role.
  */
 export const ROLE_NAV_ITEMS: Record<UserRole, string[]> = {
-  FOUNDER: ["dashboard", "projects", "escalations", "agents", "decisions", "delivery", "metrics", "activity-log"],
+  FOUNDER: ["dashboard", "projects", "escalations", "agents", "decisions", "delivery", "metrics", "activity-log", "user-approvals"],
   SALES_LEAD: ["dashboard", "projects", "escalations", "activity-log"],
   DELIVERY_LEAD: ["dashboard", "projects", "delivery", "escalations", "activity-log"],
   CREATIVE_SPECIALIST: ["dashboard", "projects"],

@@ -14,6 +14,7 @@ import {
   Truck,
   BarChart3,
   ScrollText,
+  UserCheck,
 } from "lucide-react";
 
 import {
@@ -46,6 +47,7 @@ const allNavItems = [
   { key: "delivery", title: "Delivery", url: "/dashboard/delivery", icon: Truck },
   { key: "metrics", title: "Metrics", url: "/dashboard/metrics", icon: BarChart3 },
   { key: "activity-log", title: "Activity Log", url: "/dashboard/activity-log", icon: ScrollText },
+  { key: "user-approvals", title: "User Approvals", url: "/dashboard/user-approvals", icon: UserCheck },
 ];
 
 interface UserInfo {
